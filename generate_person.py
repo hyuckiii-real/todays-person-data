@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
@@ -73,20 +74,31 @@ prompt = f"""
 
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-response = client.models.generate_content(
-    model="gemini-3.8-flash",
-    contents=prompt,
-    config=types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=PersonOfTheDay,
-        temperature=0.4,
-    ),
-)
+# 6. 일시적 서버 과부하(503) 대비 최대 3회 자동 재시도 호출
+response = None
+for attempt in range(3):
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=PersonOfTheDay,
+                temperature=0.4,
+            ),
+        )
+        break
+    except Exception as e:
+        print(f"시도 {attempt + 1} 실패 (일시적 서버 지연): {e}")
+        if attempt < 2:
+            time.sleep(10)
+        else:
+            raise e
 
 person_data = json.loads(response.text)
 person_data["date"] = today_str
 
-# 6. today.json 및 archive.json 저장
+# 7. today.json 및 archive.json 저장
 with open(TODAY_FILE, "w", encoding="utf-8") as f:
     json.dump(person_data, f, ensure_ascii=False, indent=2)
 

@@ -72,11 +72,16 @@ prompt = f"""
 6. **가독성**: 모바일 카드 화면에서 30초~1분 안에 읽히도록 간결하고 흥미로운 한국어 문체로 작성하세요.
 """
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+# 60초 HTTP 타임아웃을 설정해 서버 응답 지연 시 무한 대기(6시간 행) 방지
+client = genai.Client(
+    api_key=os.environ["GEMINI_API_KEY"],
+    http_options=types.HttpOptions(timeout=60000),
+)
 
-# 6. 일시적 서버 과부하(503) 대비 최대 3회 자동 재시도 호출
+# 6. 자정 트래픽 과부하(503) 대비 30초 간격 최대 5회 자동 재시도 호출
 response = None
-for attempt in range(3):
+max_retries = 5
+for attempt in range(max_retries):
     try:
         response = client.models.generate_content(
             model="gemini-3.8-flash",
@@ -89,9 +94,9 @@ for attempt in range(3):
         )
         break
     except Exception as e:
-        print(f"시도 {attempt + 1} 실패 (일시적 서버 지연): {e}")
-        if attempt < 2:
-            time.sleep(10)
+        print(f"시도 {attempt + 1}/{max_retries} 실패 (서버 지연/과부하): {e}")
+        if attempt < max_retries - 1:
+            time.sleep(30)
         else:
             raise e
 

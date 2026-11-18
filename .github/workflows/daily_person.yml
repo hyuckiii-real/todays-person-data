@@ -2,8 +2,8 @@ name: Daily Person Generator
 
 on:
   schedule:
-    # 매일 UTC 15:00 = 한국 시간(KST) 자정 00:00
-    - cron: '0 15 * * *'
+    # 매일 UTC 15:07 = 한국 시간(KST) 자정 00:07 (정각 트래픽 병목 회피)
+    - cron: '7 15 * * *'
   workflow_dispatch: # 수동 테스트 실행 버튼 활성화
 
 permissions:
@@ -12,6 +12,7 @@ permissions:
 jobs:
   generate-person:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # 혹시 모를 무한 대기 시 10분 내 안전 종료
 
     steps:
       - name: Checkout repository

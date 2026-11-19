@@ -43,7 +43,7 @@ if archive_data and archive_data[-1].get("date") == today_str:
 excluded_names = [item["name"] for item in archive_data[-365:]]
 excluded_str = ", ".join(excluded_names) if excluded_names else "없음"
 
-# 4. 출력 JSON 스키마 엄격 정의 (파싱 에러 원천 차단)
+# 4. 출력 JSON 스키마 엄격 정의
 class PersonOfTheDay(BaseModel):
     date: str = Field(description="오늘 날짜 (YYYY-MM-DD)")
     theme: str = Field(description="오늘의 요일 테마")
@@ -57,7 +57,7 @@ class PersonOfTheDay(BaseModel):
     quote_ko: str = Field(description="대표 어록의 한국어 번역 또는 검증된 명언이 없을 경우 인물의 핵심 철학을 요약한 한 문장")
     tmi: str = Field(description="교과서 외적인 인간적인 면모나 흥미로운 검증된 일화 (2문장 이내)")
 
-# 5. 할루시네이션 및 논란 방어 프롬프트
+# 5. 프롬프트
 prompt = f"""
 오늘은 {today_str} ({month_day})이며, 오늘의 필수 테마는 **[{today_theme}]**입니다.
 이 테마에 부합하는 '오늘의 인물' 1명을 선정해 JSON으로 작성해 주세요.
@@ -72,19 +72,21 @@ prompt = f"""
 6. **가독성**: 모바일 카드 화면에서 30초~1분 안에 읽히도록 간결하고 흥미로운 한국어 문체로 작성하세요.
 """
 
-# 60초 HTTP 타임아웃을 설정해 서버 응답 지연 시 무한 대기(6시간 행) 방지
 client = genai.Client(
     api_key=os.environ["GEMINI_API_KEY"],
     http_options=types.HttpOptions(timeout=60000),
 )
 
-# 6. 자정 트래픽 과부하(503) 대비 30초 간격 최대 5회 자동 재시도 호출
+# 6. 점진적 대기(30초~180초) + 6회 이후 폴백 모델 전환으로 503 과부하 완벽 방어
 response = None
-max_retries = 5
+max_retries = 8
 for attempt in range(max_retries):
+    # 앞선 6번은 gemini-3.8-flash 시도, 계속 혼잡하면 마지막 2번은 다른 모델로 우회
+    target_model = "gemini-3.8-flash" if attempt < 6 else "gemini-2.5-flash-lite"
     try:
+        print(f"시도 {attempt + 1}/{max_retries} (모델: {target_model})...")
         response = client.models.generate_content(
-            model="gemini-3.8-flash",
+            model=target_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -94,9 +96,11 @@ for attempt in range(max_retries):
         )
         break
     except Exception as e:
-        print(f"시도 {attempt + 1}/{max_retries} 실패 (서버 지연/과부하): {e}")
+        wait_sec = min(30 * (attempt + 1), 180)  # 30초, 60초, 90초, 120초, 150초, 180초...
+        print(f"시도 {attempt + 1}/{max_retries} 실패: {e}")
         if attempt < max_retries - 1:
-            time.sleep(30)
+            print(f"{wait_sec}초 대기 후 재시도합니다...")
+            time.sleep(wait_sec)
         else:
             raise e
 

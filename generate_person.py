@@ -82,7 +82,7 @@ response = None
 max_retries = 8
 for attempt in range(max_retries):
     # 앞선 6번은 gemini-3.8-flash 시도, 계속 혼잡하면 마지막 2번은 다른 모델로 우회
-    target_model = "gemini-3.8-flash" if attempt < 6 else "gemini-2.5-flash-lite"
+    target_model = "gemini-3.8-flash" if attempt < 6 else "gemini-3.5-flash-lite"
     try:
         print(f"시도 {attempt + 1}/{max_retries} (모델: {target_model})...")
         response = client.models.generate_content(

@@ -1,6 +1,8 @@
 import os
 import json
 import time
+import re
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
@@ -36,11 +38,18 @@ else:
     archive_data = []
 
 # 이미 같은 날짜 데이터가 있으면 중복 생성 방지
-if archive_data and archive_data[-1].get("date") == today_str:
+if any(item.get("date") == today_str for item in archive_data):
     print(f"[{today_str}] 이미 오늘의 인물이 생성되어 있습니다.")
     exit(0)
 
-excluded_names = [item["name"] for item in archive_data[-365:]]
+def normalize_person(value):
+    # 괄호 속 영문 표기 차이는 같은 인물로 취급한다.
+    value = re.sub(r"\([^)]*\)", "", str(value))
+    value = unicodedata.normalize("NFKC", value).casefold()
+    return re.sub(r"[^\w가-힣]", "", value)
+
+excluded_names = [item["name"] for item in archive_data if item.get("name")]
+used_names = {normalize_person(name) for name in excluded_names}
 excluded_str = ", ".join(excluded_names) if excluded_names else "없음"
 
 # 4. 출력 JSON 스키마 엄격 정의
@@ -105,6 +114,23 @@ for attempt in range(max_retries):
             raise e
 
 person_data = json.loads(response.text)
+for duplicate_attempt in range(3):
+    name = person_data.get("name", "")
+    if name and normalize_person(name) not in used_names:
+        break
+    if duplicate_attempt == 2:
+        raise RuntimeError(f"이미 소개한 인물이 반복 생성되어 저장 중단: {name}")
+    print(f"중복 인물 발견: {name}. 다른 인물 재생성 ({duplicate_attempt + 1}/2)")
+    response = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=prompt + f"\n중복으로 거절된 인물: {name}. 다른 인물을 선정하세요.",
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=PersonOfTheDay,
+            temperature=0.6,
+        ),
+    )
+    person_data = json.loads(response.text)
 person_data["date"] = today_str
 
 # 7. today.json 및 archive.json 저장

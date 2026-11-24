@@ -4,10 +4,16 @@ on:
   schedule:
     # 매일 UTC 19:23 = 한국 시간(KST) 새벽 04:23 (자정~새벽 피크 트래픽 회피)
     - cron: '23 19 * * *'
+    # 자동복구: KST 08:23
+    - cron: '23 23 * * *'
   workflow_dispatch: # 수동 테스트 실행 버튼 활성화
 
 permissions:
   contents: write
+
+concurrency:
+  group: daily_daily_person
+  cancel-in-progress: false
 
 jobs:
   generate-person:
